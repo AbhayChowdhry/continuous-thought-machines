@@ -15,7 +15,7 @@ sns.set_style('darkgrid')
 
 from tqdm.auto import tqdm
 from scipy import ndimage
-# import umap
+import umap
 from scipy.special import softmax
 
 import subprocess as sp

@@ -1,9 +1,3 @@
-import sys
-import os
-# Add the project root to the Python path
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-sys.path.insert(0, project_root)
-
 import argparse
 import os
 import random
@@ -26,13 +20,12 @@ from tasks.image_classification.imagenet_classes import IMAGENET2012_CLASSES
 from models.ctm import ContinuousThoughtMachine
 from models.lstm import LSTMBaseline
 from models.ff import FFBaseline
-from tasks.image_classification.plotting import plot_neural_dynamics
-# from tasks.image_classification.plotting import plot_neural_dynamics, make_classification_gif
+from tasks.image_classification.plotting import plot_neural_dynamics, make_classification_gif
 from utils.housekeeping import set_seed, zip_python_code
 from utils.losses import image_classification_loss # Used by CTM, LSTM
 from utils.schedulers import WarmupCosineAnnealingLR, WarmupMultiStepLR, warmup
 
-# from autoclip.torch import QuantileClip
+from autoclip.torch import QuantileClip
 
 import gc
 import torchvision
@@ -333,37 +326,7 @@ if __name__=='__main__':
     train_accuracies_most_certain = [] if args.model in ['ctm', 'lstm'] else None
     test_accuracies_most_certain = [] if args.model in ['ctm', 'lstm'] else None
 
-    # Define NoOpScaler for non-CUDA or disabled AMP scenarios
-    class NoOpScaler:
-        def __init__(self, enabled=True):
-            # enabled argument is for API consistency with GradScaler
-            pass
-
-        def scale(self, loss):
-            return loss
-
-        def step(self, optimizer):
-            optimizer.step()
-
-        def update(self):
-            pass
-
-        def unscale_(self, optimizer):
-            pass
-
-        def load_state_dict(self, state_dict):
-            pass
-
-        def state_dict(self):
-            return {}
-
-    # Scaler for mixed precision
-    if "cuda" in device and args.use_amp:
-        from torch.cuda.amp import GradScaler # Import here to keep it conditional
-        scaler = GradScaler()
-    else:
-        # For CPU, MPS, or if AMP is disabled
-        scaler = NoOpScaler()
+    scaler = torch.amp.GradScaler("cuda" if "cuda" in device else "cpu", enabled=args.use_amp)
 
     # Reloading logic
     if args.reload:
@@ -437,8 +400,7 @@ if __name__=='__main__':
             loss = None
             accuracy = None
             # Model-specific forward and loss calculation
-            autocast_dtype = torch.bfloat16 if device == "cpu" else torch.float16
-            with torch.autocast(device_type=device, dtype=autocast_dtype, enabled=args.use_amp):
+            with torch.autocast(device_type="cuda" if "cuda" in device else "cpu", dtype=torch.float16, enabled=args.use_amp):
                 if args.do_compile: # CUDAGraph marking for clean compile
                      torch.compiler.cudagraph_mark_step_begin()
 
@@ -676,15 +638,15 @@ if __name__=='__main__':
                         img_to_gif = np.moveaxis(np.clip(inputs_viz[imgi].detach().cpu().numpy()*np.array(dataset_std).reshape(len(dataset_std), 1, 1) + np.array(dataset_mean).reshape(len(dataset_mean), 1, 1), 0, 1), 0, -1)
 
                         pbar.set_description('Tracking: Producing attention gif')
-                        # make_classification_gif(img_to_gif,
-                        #                         targets_viz[imgi].item(),
-                        #                         predictions_viz[imgi].detach().cpu().numpy(),
-                        #                         certainties_viz[imgi].detach().cpu().numpy(),
-                        #                         post_activations_viz[:,imgi], 
-                        #                         attention_tracking_viz[:,imgi], 
-                        #                         class_labels,
-                        #                         f'{args.log_dir}/{imgi}_attention.gif',
-                        #                         )
+                        make_classification_gif(img_to_gif,
+                                                targets_viz[imgi].item(),
+                                                predictions_viz[imgi].detach().cpu().numpy(),
+                                                certainties_viz[imgi].detach().cpu().numpy(),
+                                                post_activations_viz[:,imgi], 
+                                                attention_tracking_viz[:,imgi], 
+                                                class_labels,
+                                                f'{args.log_dir}/{imgi}_attention.gif',
+                                                )
                         del predictions_viz, certainties_viz, pre_activations_viz, post_activations_viz, attention_tracking_viz
                     except Exception as e:
                         print(f"Visualization failed for model {args.model}: {e}")
