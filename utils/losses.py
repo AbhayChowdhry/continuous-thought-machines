@@ -113,10 +113,12 @@ def maze_loss(predictions, certainties, targets, cirriculum_lookahead=5, use_mos
     iscorrects = (predictions.argmax(2) == targets.unsqueeze(-1)).cumsum(1)
     correct_mask = (iscorrects == torch.arange(1, iscorrects.size(1)+1, device=iscorrects.device).reshape(1, -1, 1))
     correct_mask[:,0,:] = 1
-    upto_where = correct_mask.cumsum(1).argmax(1).max(-1)[0]+cirriculum_lookahead
-    loss_mask = torch.zeros_like(losses)
-    for bi in range(predictions.size(0)):
-        loss_mask[bi, :upto_where[bi]] = 1
+    prefix_argmax = correct_mask.cumsum(1).argmax(1)  # (B, T)
+    upto_where = prefix_argmax.max(dim=1)[0] + cirriculum_lookahead  # (B,)
+    upto_where = upto_where.clamp(max=losses.size(1))
+    r_idx = torch.arange(losses.size(1), device=losses.device)
+    mask_2d = (r_idx[None, :] < upto_where[:, None]).float()  # (B, R)
+    loss_mask = mask_2d[:,:,None].expand_as(losses)  # (B, R, T)
 
     # Reduce losses along route dimension
     # Will now be of shape [B, internal_ticks]
